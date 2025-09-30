@@ -1,0 +1,134 @@
+---
+title: "Formulario 2: DCA - Parte II"
+subtitle: "Diseño de experimentos"
+author: "Andrés Felipe Pico Zúñiga"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r, include = FALSE}
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = system("which python", intern = TRUE))
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import scipy
+
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+data = "nitrogeno"
+```
+
+# Enunciado
+
+Problema 1: Se realizó una investigación para determinar la pérdida de nitrógeno por transpiración con varios niveles dietéticos de proteínas. En el experimento se utilizaron 16 hombres preadolescentes a quienes se les juzgó estar saludables. Cada muchacho estuvo sujeto a una de las cuatro dietas controladas en las cuales consumía 20 (A), 45 (B), 60 (C) u 85 (D) gramos de proteínas por día. Los siguientes datos representan la pérdida de nitrógeno del cuerpo a través de la transpiración, en miligramos, recabados durante los dos días últimos del periodo de experimentación.
+
+```{python}
+df = pd.read_csv(f"./data/{data}.csv")
+print(df)
+```
+
+El diseño apropiado para este enunciado es el unifactorial completamente aleatorizado (DCA).
+
+La hipótesis nula es que la pérdida de nitrógeno no depende del tipo de dieta.
+
+# Solución
+
+## Variables iniciales
+
+```{python}
+alfa = 0.05           # Nivel de significancia
+k = len(df.columns)   # Número de tratamientos
+n = len(df)           # Número de muestras por tratamiento
+N = k * n             # Número total de observaciones
+```
+
+## Suma de cuadrados
+
+```{python}
+means = df.mean()
+total_mean = np.mean(df.values)
+sstr = n * sum((means - total_mean)**2)
+print(f"Suma de cuadrados: {sstr}")
+```
+
+## Varianza
+
+```{python}
+grados_libertad_tr = k - 1
+error = N - k
+cmtr = sstr / grados_libertad_tr
+print(f"Varianza de los tratamientos: {cmtr}")
+```
+
+## F calculada
+
+```{python}
+sse = sum(sum((df[col] - means[col])**2) for col in df.columns)
+cme = sse / error
+f_calculated = cmtr / cme
+print(f"F calculada: {f_calculated}")
+```
+
+## Valor teórico de F
+
+```{python}
+f_teoric = scipy.stats.f.isf(q=alfa, dfn=(k - 1), dfd=(N - k))
+print(f"Valor teórico de F: {f_teoric}")
+```
+
+## Conclusión
+
+El valor estadístico F calculado (`r py$f_calculated`) es considerablemente mayor que el valor F teórico (`r py$f_teoric`), lo que demuestra que la variación entre las dietas es significativamente más grande que la variación aleatoria.
+
+## Prueba HSD de Tukey
+
+```{python}
+alfa = 0.001
+df_long = df.melt(var_name='Dieta', value_name='Perdida nitrógeno')
+tukey_results = pairwise_tukeyhsd(
+  endog=df_long['Perdida nitrógeno'],
+  groups=df_long['Dieta'],
+  alpha=alfa
+)
+
+print(tukey_results)
+print("Perdida nitrógeno promedio por dieta:")
+print(df.mean().sort_values(ascending=False))
+```
+
+De este modo, se ve que las dietas con mayores perdidas de nitrógeno son C y D. Sin embargo, no hay diferencia significativa entre ellos.
+
+## Prueba LSD
+
+```{python}
+t_critico = scipy.stats.t.ppf(1 - alfa / 2, df=error)
+mse = sse / error
+lsd = t_critico * np.sqrt(mse * (2 / n))
+print(f"Cuadrado Medio del Error (MSE): {mse:.4f}")
+print(f"Valor t-crítico: {t_critico:.4f}")
+print(f"Valor LSD con alfa={alfa}: {lsd:.4f}")
+print("-" * 50)
+
+print("Comparaciones por pares:")
+group_means = df.mean().to_dict()
+groups = list(group_means.keys())
+
+for i in range(len(groups)):
+    for j in range(i + 1, len(groups)):
+        group1 = groups[i]
+        group2 = groups[j]
+        
+        mean_diff = abs(group_means[group1] - group_means[group2])
+        
+        print(f"\n- {group1} vs. {group2}:")
+        print(f"  Diferencia de medias: {mean_diff:.4f}")
+        
+        if mean_diff > lsd:
+            print(f"  Resultado: La diferencia es SIGNIFICATIVA (diferencia > LSD)")
+        else:
+            print(f"  Resultado: La diferencia NO es significativa (diferencia <= LSD)")
+```
