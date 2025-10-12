@@ -1,0 +1,131 @@
+---
+title: "Formulario 3: DBCA - Parte I"
+subtitle: "Diseño de experimentos"
+author: "Andrés Felipe Pico Zúñiga"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r, include = FALSE}
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = system("which python", intern = TRUE))
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import scipy
+
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+data = "silo"
+```
+
+# Enunciado
+
+Problema 1: En una empresa se tienen varios silos para almacenar leche (tanques de 10,000 litros) Un aspecto crítico para que se conserve la leche es la temperatura de almacenamiento. Se sospecha que en algunos silos hay problemas, por ello durante cinco días se decide registrar la temperatura a cierta hora crítica. La temperatura de una día a otro puede ser una fuente de variabilidad que podría impactar la variabilidad total.
+
+```{python}
+df = pd.read_csv(f"./data/{data}.csv")
+print(df)
+```
+
+El diseño apropiado para este enunciado es el diseño en bloques (DBCA).
+
+La hipótesis nula es que la temperatura media de almacenamiento es la misma en los silos.
+
+# Solución
+
+## Variables iniciales
+
+```{python}
+alfa = 0.05           # Nivel de significancia
+k = len(df.columns)   # Número de tratamientos
+n = len(df)           # Número de muestras por tratamiento
+N = k * n             # Número total de observaciones
+```
+
+## Suma de cuadrados
+
+```{python}
+means = df.mean()
+total_mean = np.mean(df.values)
+sstr = n * sum((means - total_mean)**2)
+print(f"Suma de cuadrados: {sstr}")
+```
+
+## Varianza
+
+```{python}
+grados_libertad_tr = k - 1
+error = N - k
+cmtr = sstr / grados_libertad_tr
+print(f"Varianza de los tratamientos: {cmtr}")
+```
+
+## F calculada
+
+```{python}
+sse = sum(sum((df[col] - means[col])**2) for col in df.columns)
+cme = sse / error
+print(f"Cuadrado medio del error: {cme}")
+
+f_calculated = cmtr / cme
+print(f"F calculada: {f_calculated}")
+```
+
+## Valor teórico de F
+
+```{python}
+f_teoric = scipy.stats.f.isf(q=alfa, dfn=(k - 1), dfd=(N - k))
+print(f"Valor teórico de F: {f_teoric}")
+```
+
+## Prueba HSD de Tukey
+
+```{python}
+alfa = 0.001
+df_long = df.melt(var_name='Silo', value_name='Temperatura')
+tukey_results = pairwise_tukeyhsd(
+  endog=df_long['Temperatura'],
+  groups=df_long['Silo'],
+  alpha=alfa
+)
+
+print(tukey_results)
+print("Temperatura promedio por silo:")
+print(df.mean().sort_values(ascending=False))
+```
+
+## Prueba LSD
+
+```{python}
+t_critico = scipy.stats.t.ppf(1 - alfa / 2, df=error)
+mse = sse / error
+lsd = t_critico * np.sqrt(mse * (2 / n))
+print(f"Cuadrado Medio del Error (MSE): {mse:.4f}")
+print(f"Valor t-crítico: {t_critico:.4f}")
+print(f"Valor LSD con alfa={alfa}: {lsd:.4f}")
+print("-" * 50)
+
+print("Comparaciones por pares:")
+group_means = df.mean().to_dict()
+groups = list(group_means.keys())
+
+for i in range(len(groups)):
+    for j in range(i + 1, len(groups)):
+        group1 = groups[i]
+        group2 = groups[j]
+        
+        mean_diff = abs(group_means[group1] - group_means[group2])
+        
+        print(f"\n- {group1} vs. {group2}:")
+        print(f"  Diferencia de medias: {mean_diff:.4f}")
+        
+        if mean_diff > lsd:
+            print(f"  Resultado: La diferencia es SIGNIFICATIVA (diferencia > LSD)")
+        else:
+            print(f"  Resultado: La diferencia NO es significativa (diferencia <= LSD)")
+```
+
