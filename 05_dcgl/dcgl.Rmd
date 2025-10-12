@@ -1,0 +1,191 @@
+---
+title: "Formulario 5: DCGL"
+subtitle: "Diseño de experimentos"
+author: "Andrés Felipe Pico Zúñiga"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r, include = FALSE}
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = system("which python", intern = TRUE))
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import seaborn as sns
+import statsmodels
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import statsmodels.formula.api as smf
+import scipy.stats as stats
+```
+
+# Enunciado
+
+Un experimentador estudia los efectos que tienen cinco Formulaciones (A, B, C, D, E) diferentes de la carga propulsora utilizada en los sistemas de expulsión de la tripulación de un avión basado en la rapidez de combustión. Cada formulación se hace con un lote de materia prima (Columnas: 1, 2, 3, 4, 5, 6) diferente que sólo alcanza para probar cinco formulaciones. Además, las formulaciones son preparadas por varios Operadores (filas: 1, 2, 3, 4, 5, 6), y puede haber diferencias sustanciales en las habilidades y experiencia en cada uno de ellos; por tanto, al parecer, hay dos factores perturbadores que serán “calculados en promedio” en dicho diseño: los lotes de materia prima y los operadores. El diseño apropiado para este problema consiste en probar cada formulación exactamente una vez en cada uno de los operadores. Para esto, se parte del diseño de un Cuadrado Latino. Luego de realizar el análisis del experimento de cuadrado latino anterior, se supone que existe un factor adicional, Los montajes de prueba (letras griegas), que podría ser importante. Este factor considera 5 montajes de prueba diferentes denotados por letras griegas. En la siguiente tabla se muestra el diseño cuadrado grecolatino resultante:
+
+(Operador/Lote)   1     2     3     4	  5	
+1	          Aα=24	Bγ=20 Cε=19 Dβ=24 Eδ=24	
+2	          Bβ=17	Cδ=24 Dα=30 Eγ=27 Aε=36	
+3	          Cγ=18	Dε=38 Eβ=26 Aδ=27 Bα=21	
+4	          Dδ=26	Eα=31 Aγ=26 Bε=23 Cβ=22	
+5	          Eε=22	Aβ=30 Bδ=20 Cα=29 Dγ=31	
+
+
+# Creación y visualización del dataframe
+
+```{python}
+data = {
+  'Operador': [ 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5],
+  'Lote': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+  'Formulacion': ['A', 'B', 'C', 'D', 'E', 'B', 'C', 'D', 'E', 'A', 'C', 'D', 'E', 'A', 'B', 'D', 'E', 'A', 'B', 'C', 'E', 'A', 'B', 'C', 'D'],
+  'Montaje': ['α', 'γ', 'ε', 'β', 'δ', 'β', 'δ', 'α', 'γ', 'ε', 'γ', 'ε', 'β', 'δ', 'α', 'δ', 'α', 'γ', 'ε', 'β', 'ε', 'β', 'δ', 'α', 'γ'],
+  'Respuesta': [24, 20, 19, 24, 24, 17, 24, 30, 27, 36, 18, 38, 26, 27, 21, 26, 31, 26, 23, 22, 22, 30, 20, 29, 31]
+}
+
+DCGL = pd.DataFrame(data)
+
+print(DCGL)
+```
+
+
+# Boxplot de la data
+
+```{python}
+fig, axs = plt.subplots(1, 4, figsize=(15, 6))
+axs[0].set_title('Respuesta vs Formulacion')
+
+sns.boxplot(
+  x="Formulacion",
+  y="Respuesta",
+  data=DCGL,
+  ax=axs[0],
+  color='lightblue'
+)
+
+sns.swarmplot(
+  x="Formulacion",
+  y="Respuesta",
+  data=DCGL,
+  color='black',
+  alpha = 0.5,
+  ax=axs[0]
+)
+
+axs[1].set_title('Respuesta vs Montaje')
+
+sns.boxplot(
+  x="Montaje",
+  y="Respuesta",
+  data=DCGL,
+  ax=axs[1],
+  color='lightgreen'
+)
+
+sns.swarmplot(
+  x="Montaje",
+  y="Respuesta",
+  data=DCGL,
+  color='black',
+  alpha = 0.5,
+  ax=axs[1]
+)
+
+axs[2].set_title('Respuesta vs Lote')
+
+sns.boxplot(
+  x="Lote",
+  y="Respuesta",
+  data=DCGL,
+  ax=axs[2],
+  color='lightcoral'
+)
+
+sns.swarmplot(
+  x="Lote",
+  y="Respuesta",
+  data=DCGL,
+  color='black',
+  alpha = 0.5,
+  ax=axs[2]
+)
+
+axs[3].set_title('Respuesta vs Operador')
+
+sns.boxplot(
+  x="Operador",
+  y="Respuesta",
+  data=DCGL,
+  ax=axs[3],
+  color='lightyellow'
+)
+
+sns.swarmplot(
+  x="Operador",
+  y="Respuesta",
+  data=DCGL,
+  color='black',
+  alpha = 0.5,
+  ax=axs[3]
+)
+```
+
+
+# Análisis de varianza
+
+```{python}
+modelo = ols(
+  'Respuesta ~ C(Formulacion) + C(Lote) + C(Operador) + C(Montaje)',
+  data=DCGL
+).fit()
+anova_table = sm.stats.anova_lm(modelo)
+print(anova_table)
+print(modelo.summary())
+```
+
+# Prueba HSD de Tukey
+
+```{python}
+# Parámetros
+alpha = 0.05
+k = len(DCGL['Formulacion'].unique())  # Número de grupos
+df_error = 8  # Grados de libertad del error (N-k)
+q_critical = stats.studentized_range.ppf(1 - alpha, k, df_error)
+HSD = q_critical * np.sqrt(modelo.mse_resid / k)
+
+print(f'Terminos del HSD')
+print(f'MSE = {modelo.mse_resid:.2f}')
+print(f"El rango studentizado para alpha = {alpha}, k = {k}, df_error = {df_error} es: q_critical = {q_critical:.2f}")
+print(f'HSD teorico de la hipotesis principal es HSD = {HSD:.2f}')
+
+def generate_hsd(variable: str):
+  tukey = pairwise_tukeyhsd(
+    endog=DCGL["Respuesta"],
+    groups=DCGL[variable],
+    alpha=alpha
+  )
+
+  tukey.plot_simultaneous()
+  print(tukey.summary())
+
+generate_hsd("Formulacion")
+```
+
+```{python}
+generate_hsd("Lote")
+```
+
+```{python}
+generate_hsd("Operador")
+```
+
+
+```{python}
+generate_hsd("Montaje")
+```
