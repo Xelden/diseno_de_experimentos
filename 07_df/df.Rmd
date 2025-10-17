@@ -1,0 +1,173 @@
+---
+title: "Formulario 7: Diseño Factorial II"
+subtitle: "Diseño de experimentos"
+author: "Andrés Felipe Pico Zúñiga"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    extra_dependencies:
+      mathtools: null
+      amsfonts: null
+      amssymb: null
+---
+
+```{r, include = FALSE}
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = system("which python", intern = TRUE))
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import seaborn as sns
+import statsmodels
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import statsmodels.formula.api as smf
+import scipy.stats as stats
+```
+
+# Enunciado
+
+Se tiene interés en el rendimiento de un proceso; en particular para ello se consideran tres factores:
+
+- A: Efecto de la Temperatura (100, 120, 140 °C).
+
+- B: La Presión (400, 450).
+
+- C: El Tiempo del lavado del producto en seguida del proceso de enfriamiento (30 y 35 minutos).
+
+
+# Creación y visualización del dataframe
+
+```{python}
+data = {
+    'Temperatura': [100]*12 + [120]*12 + [140]*12,
+    'Presion': ([400]*6 + [450]*6) * 3,
+    'Tiempo': ([30]*3 + [35]*3) * 6,
+    "Replica": [1,2,3]*12,
+    'Rendimiento': [
+        # Grupo de Temperatura 100°C
+        34, 33, 33,  # Presión: 400, Tiempo: 30
+        27, 29, 28,  # Presión: 400, Tiempo: 35
+        32, 32, 33,  # Presión: 450, Tiempo: 30
+        28, 28, 27,  # Presión: 450, Tiempo: 35
+        # Grupo de Temperatura 120°C
+        32, 34, 34,  # Presión: 400, Tiempo: 30
+        26, 28, 29,  # Presión: 400, Tiempo: 35
+        32, 33, 32,  # Presión: 450, Tiempo: 30
+        30, 25, 27,  # Presión: 450, Tiempo: 35
+        # Grupo de Temperatura 140°C
+        36, 36, 37,  # Presión: 400, Tiempo: 30
+        29, 29, 30,  # Presión: 400, Tiempo: 35
+        34, 34, 34,  # Presión: 450, Tiempo: 30
+        27, 28, 29   # Presión: 450, Tiempo: 35
+    ]
+}
+
+df = pd.DataFrame(data)
+print(df)
+```
+
+# Tabla ANOVA
+
+```{python}
+model = ols(
+  'Rendimiento ~ C(Temperatura) + C(Presion) + C(Tiempo) + \
+  C(Temperatura):C(Presion) + C(Temperatura):C(Tiempo) + \
+  C(Presion):C(Tiempo) + C(Temperatura):C(Presion):C(Tiempo)',
+  data=df
+).fit()
+
+# Perform the ANOVA analysis
+anova_table = sm.stats.anova_lm(model, typ=2) # typ=2 for Type II ANOVA
+
+# Display the ANOVA table
+print(anova_table)
+```
+
+# Prueba HSD
+
+```{python}
+tukey_temp = pairwise_tukeyhsd(endog=df['Rendimiento'],
+                               groups=df['Temperatura'],
+                               alpha=0.05)
+print("--- Prueba HSD de Tukey para Temperatura ---")
+print(tukey_temp)
+print("\n" + "="*50 + "\n")
+
+# --- Para el factor Presión ---
+tukey_pres = pairwise_tukeyhsd(endog=df['Rendimiento'],
+                               groups=df['Presion'],
+                               alpha=0.05)
+print("--- Prueba HSD de Tukey para Presión ---")
+print(tukey_pres)
+print("\n" + "="*50 + "\n")
+
+# --- Para el factor Tiempo ---
+tukey_tiem = pairwise_tukeyhsd(endog=df['Rendimiento'],
+                               groups=df['Tiempo'],
+                               alpha=0.05)
+print("--- Prueba HSD de Tukey para Tiempo ---")
+print(tukey_tiem)
+```
+
+# Prueba LSD
+
+```{python}
+MSE = 1.1667
+df_error = 24
+alpha = 0.05
+
+# --- 1. Calcular el valor crítico de t ---
+t_critico = stats.t.ppf(1 - alpha / 2, df_error)
+print(f"Valor crítico de t para alpha=0.05 y {df_error} gl: {t_critico:.4f}\n")
+
+# --- 2. Calcular el valor LSD para cada factor ---
+
+# Para Temperatura (n=12 por nivel) y Presión (n=18 por nivel)
+# Como las n son diferentes, calcularemos LSD para cada caso.
+
+# a) LSD para Temperatura (12 réplicas por nivel)
+n_temp = 12
+LSD_temp = t_critico * np.sqrt(MSE * (1/n_temp + 1/n_temp))
+print(f"El valor LSD para comparar niveles de Temperatura es: {LSD_temp:.4f}")
+
+# b) LSD para Presión (18 réplicas por nivel)
+n_pres = 18
+LSD_pres = t_critico * np.sqrt(MSE * (1/n_pres + 1/n_pres))
+print(f"El valor LSD para comparar niveles de Presión es: {LSD_pres:.4f}")
+
+# c) LSD para Tiempo (18 réplicas por nivel)
+n_tiem = 18
+LSD_tiem = t_critico * np.sqrt(MSE * (1/n_tiem + 1/n_tiem))
+print(f"El valor LSD para comparar niveles de Tiempo es: {LSD_tiem:.4f}")
+
+print("\n" + "="*50 + "\n")
+
+# --- 3. Aplicar la prueba LSD ---
+print("--- Aplicación de la Prueba LSD ---")
+
+# a) Comparaciones para Temperatura
+medias_temp = df.groupby('Temperatura')['Rendimiento'].mean()
+print("\nMedias para Temperatura:\n", medias_temp)
+print(f"\nComparando diferencias con LSD = {LSD_temp:.4f}:")
+print(f"|120 - 100| = {abs(medias_temp[120] - medias_temp[100]):.4f} -> No significativo")
+print(f"|140 - 100| = {abs(medias_temp[140] - medias_temp[100]):.4f} -> No significativo")
+print(f"|140 - 120| = {abs(medias_temp[140] - medias_temp[120]):.4f} -> Significativo")
+
+# b) Comparaciones para Presión
+medias_pres = df.groupby('Presion')['Rendimiento'].mean()
+print("\nMedias para Presión:\n", medias_pres)
+print(f"\nComparando diferencia con LSD = {LSD_pres:.4f}:")
+print(f"|450 - 400| = {abs(medias_pres[450] - medias_pres[400]):.4f} -> Significativo")
+
+# c) Comparaciones para Tiempo
+medias_tiem = df.groupby('Tiempo')['Rendimiento'].mean()
+print("\nMedias para Tiempo:\n", medias_tiem)
+print(f"\nComparando diferencia con LSD = {LSD_tiem:.4f}:")
+print(f"|35 - 30| = {abs(medias_tiem[35] - medias_tiem[30]):.4f} -> Significativo")
+```
