@@ -1,0 +1,163 @@
+---
+title: "Formulario 8: Diseño Factorial 2^k"
+subtitle: "Diseño de experimentos"
+author: "Andrés Felipe Pico Zúñiga"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    extra_dependencies:
+      mathtools: null
+      amsfonts: null
+      amssymb: null
+---
+
+```{r, include = FALSE}
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = system("which python", intern = TRUE))
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import seaborn as sns
+import statsmodels
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import statsmodels.formula.api as smf
+import scipy.stats as stats
+```
+
+# Enunciado
+
+En una planta donde se fabrican semiconductores se quiere mejorar el rendimiento del proceso vía diseño de experimentos. De acuerdo con la experiencia del grupo de mejora, los factores que podrían tener mayor influencia sobre la variable de respuesta (rendimiento), así como los niveles de prueba utilizados son los siguientes:
+
+- A = Nivel de la abertura (pequeña, grande) = (-1,1).
+
+- B = Tiempo de exposición (20% abajo, 20% arriba)= (-1,1).
+
+- C = Tiempo de revelado (30 seg, 45 seg)= (-1,1).
+
+- D = Dimensión de la máscara (pequeña, grande)= (-1,1).
+
+- E = Tiempo de grabado (14.5 min, 15.5 min)= (-1,1).
+
+Se decide correr un experimento 25 con una sola corrida o réplica para estudiar estos cinco factores. Se hacen las 32 corridas a nivel proceso.
+
+# Creación y visualización del dataframe
+
+```{python}
+
+
+A = Nivel_abertura =  [ "-1" ,  "1" ]
+B = Tiempo_exposición  =  [ "-1" ,  "1" ]
+C = Tiempo_revelado  =  [ "-1" ,  "1" ]
+D = Dimensión_máscara  =  [ "-1" ,  "1" ]
+E = Tiempo_grabado  =  [ "-1" ,  "1" ]
+rendimiento = [7, 9, 34, 55, 16, 20, 40, 60,
+                8, 10, 32, 50, 18, 21, 44, 61,
+                18, 12, 35, 52, 15, 22, 45, 65,
+                6, 10, 30, 53, 15, 20, 41, 63]
+     
+
+Nivel_abertura =  (["-1"] * 1 + ["1"] * 1)*16
+
+Tiempo_exposición = (["-1"] * 2 + ["1"] * 2 ) * 8
+Tiempo_revelado = (["-1"] * 4 + ["1"] * 4)*4
+
+Dimensión_máscara = (["-1"] * 8 + ["1"] * 8 ) * 2
+Tiempo_grabado = ["-1"] * 16 + ["1"] * 16
+
+df = pd.DataFrame({
+  'A': Nivel_abertura,
+  'B': Tiempo_exposición,
+  'C': Tiempo_revelado,
+  'D': Dimensión_máscara,
+  'E': Tiempo_grabado,
+  'rendimiento': rendimiento
+})
+
+print(df)
+```
+
+# Tabla ANOVA
+
+## Efectos principales e interacciones dobles
+
+```{python}
+modelo1 = ols(
+  "rendimiento ~ (A+B+C+D+E)**2",
+  data=df
+).fit()
+anova_result = sm.stats.anova_lm(modelo1, typ=1)
+print (anova_result)
+```
+
+```{python}
+modelo2 = sm.OLS.from_formula(
+  'rendimiento ~ (A+B+C+D+E)**2',
+  data=df
+).fit()
+print(modelo2.summary())
+```
+
+### Optimización
+
+```{python}
+from scipy.optimize import minimize
+
+# Define la función que deseas maximizar se antepone el signo (-)
+def funcion(x):
+    return -(9.437 + 0.687*x[0] + 24.187*x[1] + 6.187*x[2] - 1.563*x[3] + 2.937*x[4] + 17.125*x[0]*x[1] + 2.125*x[0]*x[2] + 1.125*x[0]*x[3] + 0.625*x[0]*x[4] + 1.375*x[1]*x[2] - 0.125*x[1]*x[3] - 0.125*x[1]*x[4]+ 2.875*x[2]*x[3]- 0.625*x[2]*x[4] - 3.625*x[3]*x[4])
+
+# Define las restricciones para x
+def variables(x):
+    return x[0], x[1], x[2], x[3], x[4]
+
+# Definir las restricciones de límite para x
+restricciones = [(-1, 1), (-1, 1), (-1, 1), (-1, 1), (-1, 1)]
+
+# Suprimir la salida de la optimización
+res = minimize(funcion, [0, 0, 0, 0, 0], method='SLSQP', constraints={'type':'ineq', 'fun': variables}, bounds=restricciones)
+
+# Imprimir el resultado
+print("Resultado óptimo:")
+print("x:", res.x)
+print("Valor Máximo:", -res.fun)  # Como minimizamos el negativo de la función
+```
+
+## Colapsando el Factor E
+
+```{python}
+modelo3 = ols(
+  "rendimiento ~ (A+B+C+D)**2",
+  data=df
+).fit()
+anova_result = sm.stats.anova_lm(modelo3, typ=1)
+print (anova_result)
+```
+
+### Optimización
+
+```{python}
+modelo3.params
+```
+
+## Colapsando el Factor D
+
+```{python}
+modelo4 = ols(
+  "rendimiento ~ (A+B+C)**2",
+  data=df
+).fit()
+anova_result = sm.stats.anova_lm(modelo4, typ=1)
+print (anova_result)
+```
+
+### Optimización
+
+```{python}
+modelo4.params
+```
